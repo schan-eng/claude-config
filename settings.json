@@ -1,0 +1,31 @@
+{
+  "model": "claude-fable-5[1m]",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/simplify-track-edits.sh 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/simplify-on-stop.sh",
+            "timeout": 15,
+            "statusMessage": "Checking for simplify pass..."
+          }
+        ]
+      }
+    ]
+  },
+  "effortLevel": "xhigh",
+  "theme": "dark",
+  "autoCompactEnabled": true
+}

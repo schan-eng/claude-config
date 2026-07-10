@@ -1,0 +1,8 @@
+# Allowlist: ignore everything, then explicitly track user config only.
+/*
+!/.gitignore
+!/README.md
+!/CLAUDE.md
+!/settings.json
+!/skills/
+!/hooks/

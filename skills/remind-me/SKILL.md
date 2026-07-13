@@ -190,7 +190,7 @@ shows only what's needed to re-orient and start. Do not write it to a file.
 
 ```
 # ENG-10751 — <Linear title>
-`simon/eng-10751-…` · Linear: In Progress · PR #11423 open (CI ❌) · SPEC 🟡 · last touched 2 weeks ago
+`simon/eng-10751-…` · Linear: In Progress · PR #11423 open (CI ❌) https://github.com/org/repo/pull/11423 · SPEC 🟡 · last touched 2 weeks ago
 
 ## 🧭 Where you left off
 <2–3 sentences: the goal in one clause, what's built so far, and exactly what
@@ -223,7 +223,9 @@ Rules for the digest:
   with "← you are here". Order: open PRs, then merged/closed, then PR-less
   branches. More than 6 → keep the 6 most recently updated and add "…N more
   under PR/review". Omit the whole section when the ticket has exactly one
-  branch and no sibling PRs (the header already shows the primary PR).
+  branch and no sibling PRs (the header already shows the primary PR and its
+  link). The header line always carries the primary PR's URL, so a link
+  renders even when this section is omitted.
 - **Heads-up is not a section, it's a tripwire** — include it only when
   silence would cause rework (e.g. "approved plan exists at <path> — read
   before re-planning", "Jira-DC mode was rejected, see SPEC non-goals").

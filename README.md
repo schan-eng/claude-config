@@ -18,4 +18,4 @@ rsync -a ~/.claude-config-tmp/ ~/.claude/ && rm -rf ~/.claude-config-tmp
 
 (Or clone directly into a fresh `~/.claude` before first run of Claude Code.)
 
-Never commit: `history.jsonl`, `projects/`, `sessions/`, `shell-snapshots/`, plugin caches — session data and potentially sensitive transcripts. The allowlist gitignore enforces this.
+Session data (`history.jsonl`, `projects/`, `sessions/`, plugin caches) contains potentially sensitive transcripts and must never be tracked — the allowlist enforces this.

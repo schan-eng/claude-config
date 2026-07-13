@@ -6,7 +6,7 @@ Tracked (allowlist in `.gitignore` — everything else in `~/.claude` is ignored
 
 - `CLAUDE.md` — response-style rules injected into every session
 - `settings.json` — model, hooks wiring, theme
-- `skills/` — personal slash-command skills (`/remind-me`, `/simplify`, `/decompose`, `/worktree-branch`, `/blast-radius-check`)
+- `skills/` — personal slash-command skills (`/remind-me`, `/simplify`, `/decompose`, `/worktree-branch`, `/blast-radius-check`, `/recommend-reviewer`)
 - `hooks/` — deterministic post-implementation pipeline (`simplify-track-edits.sh`, `simplify-on-stop.sh`)
 
 ## Restore on a new machine

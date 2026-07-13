@@ -39,7 +39,7 @@ Run all four; each produces `(candidate, raw-weight, receipt-line)` tuples. A ca
 Who wrote the exact lines this PR touches (the strongest signal):
 
 1. For each changed file, get the old-side hunk ranges: `git diff -U0 "$base" -- <file>` and parse each `@@ -<start>,<count> ... @@` header (skip files that are pure additions — no old side).
-2. Blame those ranges **at the base commit** so you see pre-PR authorship: `git blame -w -M -C -L <start>,<end> --line-porcelain "$base" -- <file>`, collecting `author` / `author-mail` / `author-time` per line.
+2. Blame those ranges **at the base commit** so you see pre-PR authorship: `git blame -w -M -C -L <start>,+<count> --line-porcelain "$base" -- <file>`, collecting `author` / `author-mail` / `author-time` per line.
 3. Tally blamed lines per author. Receipt format: `wrote 58% of the modified lines in backend/api/chat/`.
 
 ### 2.2 Recent activity in the touched files and directories — weight 25%

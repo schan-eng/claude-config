@@ -24,7 +24,7 @@ This is **not** a correctness review — use `/code-review` or `self-review` for
 2. Otherwise default to the working diff vs the default branch: `git fetch`, then `git diff --stat $(git merge-base HEAD origin/main)...HEAD`, plus uncommitted changes (`git status`, `git diff`).
 3. If nothing is staged or committed, ask the user what to scope against.
 
-List changed files grouped by **component/layer**. In this monorepo that means at minimum: `apps/next` (frontend), `backend/api` (tRPC), `backend/task-worker` (Hatchet workflows), `packages/*` (shared — high blast), `packages/prisma` (schema/migrations — often irreversible), `tools/kindo-cli` + `deploy/` + `helm_chart/` (install/release), infra/Terraform. If a `monorepo-architecture` skill exists, consult it for layer boundaries and dependency rules.
+List changed files grouped by **component/layer**. In this monorepo that means at minimum: `apps/next` (frontend), `backend/api` (tRPC), `backend/task-worker-ts` (Hatchet workflows), `packages/*` (shared — high blast), `packages/prisma` (schema/migrations — often irreversible), `tools/kindo-cli` (incl. its `deploy/`) + per-service `helm_chart/` (install/release), infra/Terraform. If a `monorepo-architecture` skill exists, consult it for layer boundaries and dependency rules.
 
 **The intent.** You cannot judge whether reach is necessary without knowing what the task was. Get it from the ticket, PR description, commit messages, or the conversation; if none of that is available, ask the user for one sentence on what the change was supposed to do.
 

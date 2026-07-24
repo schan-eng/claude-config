@@ -5,13 +5,15 @@ description: >-
   blame of the code the PR actually modifies, recent commit activity in the
   touched files/directories, who reviewed past PRs in those paths, and Linear
   context (the PR's ticket, its related/blocking issues, and who is actively
-  working nearby). Read-only until the human approves assignment. Invoke
-  explicitly via `/recommend-reviewer` (not auto-invoked).
-allowed-tools: Read, Grep, Glob, Bash, Skill
+  working nearby). Read-only until the human approves assignment; after
+  assignment, optionally pings the chosen reviewers in #eng-discussion with
+  links to the selected PR(s). Invoke explicitly via `/recommend-reviewer`
+  (not auto-invoked).
+allowed-tools: Read, Grep, Glob, Bash, Skill, AskUserQuestion, ToolSearch, mcp__plugin_slack_slack__*
 argument-hint: "[pr-number (default: current branch's open PR, else working diff vs origin/main)]"
 user-invocable: true
 disable-model-invocation: true
-compatibility: Requires git and an authenticated GitHub CLI (gh). Linear signals need a resolvable ticket id plus a linear skill or Linear MCP tools in the session; skip that signal gracefully when absent.
+compatibility: Requires git and an authenticated GitHub CLI (gh). Linear signals need a resolvable ticket id plus a linear skill or Linear MCP tools in the session; skip that signal gracefully when absent. The Slack ping (Phase 7) needs Slack MCP tools in the session; without them, print the composed message for copy-paste instead.
 ---
 
 # Recommend Reviewer — evidence-based reviewer picks for a PR
@@ -20,7 +22,7 @@ Picking a reviewer by gut ("who's around?") wastes the strongest predictor of re
 
 ## Prime directive — recommend, never assign
 
-Everything up to the final step is **read-only** (git plumbing, `gh` reads, Linear reads). Requesting a review notifies a human, so it is an outward-facing action: present the recommendation table, then ask. Only after explicit approval run `gh pr edit <n> --add-reviewer <login>`. Never post comments, never @-mention anyone in PR bodies, never assign on silence.
+Everything up to the final step is **read-only** (git plumbing, `gh` reads, Linear reads). Requesting a review notifies a human, so it is an outward-facing action: present the recommendation table, then ask. Only after explicit approval run `gh pr edit <n> --add-reviewer <login>`. Never post comments, never @-mention anyone in PR bodies, never assign on silence. The same gate applies to the Slack ping (Phase 7): a channel post notifies humans, so it is drafted, shown, and sent only on explicit approval.
 
 ## Phase 1 — Resolve the PR / change set
 
@@ -111,7 +113,28 @@ Linear: <ticket> — <one line of related-issue context and any ⚠ conflict tri
 Skipped: <signals that couldn't run and why — e.g. "Linear (no ticket in title)">
 ```
 
-Then: "Assign which? (runs `gh pr edit <n> --add-reviewer <login>`)" — and act only on an explicit choice. With no PR (working-diff mode), end at the table and note assignment needs a PR first.
+Then gate with **one AskUserQuestion call** (never a prose question — the user gets checkable options) asking two things:
+
+1. "Which reviewers should I request?" — `multiSelect: true`, one option per finalist (label `@login`, description = their strongest receipt). Selected → `gh pr edit <n> --add-reviewer <login>` for each.
+2. "Ping the chosen reviewers in #eng-discussion?" — yes/no; yes → Phase 7.
+
+Act only on the explicit selections. With no PR (working-diff mode), end at the table and note assignment needs a PR first.
+
+## Phase 7 — Optional: Slack review request in #eng-discussion
+
+Runs only when the user chose "yes" to the ping in the Phase 6 selector, and only for reviewers they actually chose. Needs the session's Slack MCP tools (load via ToolSearch); if they're absent or unauthenticated, print the composed message for copy-paste and say why it wasn't sent.
+
+1. **Collect the candidate PR list.** Start with the analyzed PR. If a ticket id resolved in Phase 1.5, also run `gh pr list --search "<TICKET> in:title" --state open --json number,title,url,headRefName` to pick up open sibling/stacked PRs. Exactly one PR → use it, no selector. Multiple → AskUserQuestion with `multiSelect: true`, one option per PR (label `#<number>`, description = short title; the analyzed PR listed first as the recommended default) and include only the chosen ones. AskUserQuestion caps at 4 options — more than 4 PRs → keep the analyzed PR plus the 3 most recently updated, list the rest in the question text, and let "Other" pull them in.
+2. **Resolve Slack identities for the chosen reviewers.** Try lookup by the reviewer's git author email first; failing that, search Slack users by their GitHub profile name. Confident match → a real `<@USERID>` mention. No confident match → plain-text name, and note in the draft that it won't notify them. Never guess between similar-looking people — an @-mention pings a real human.
+3. **Compose the message** — exactly this body shape:
+
+   ```
+   Hey @<name>[ and @<name2>], can you review this PR/these PRs. <1 sentence of context: what the change does and why it matters, sourced from the PR title/body and the Linear ticket.>
+   - <PR title> — <PR url>
+   ```
+
+   One bullet per selected PR (single PR → keep the one bullet; its link must still appear). "this PR" vs "these PRs" follows the selection count. Keep the context to one sentence — it's a nudge, not a changelog.
+4. **Gate, then post.** AskUserQuestion: "Post this to #eng-discussion?" with options "Post it" / "Don't post", **with the complete message body in the "Post it" option's `preview` field** — prose printed between tool calls may never render for the user, so the preview is the only reliable display surface, and a gate answered without the exact body visible doesn't count as approval. The built-in Other lets the user dictate wording changes; re-draft and re-gate after any edit. Only "Post it" posts. Declined or unanswered → don't post, don't retry, don't fall back to DMs.
 
 ## Edge cases
 
@@ -122,7 +145,8 @@ Then: "Assign which? (runs `gh pr edit <n> --add-reviewer <login>`)" — and act
 
 ## Guardrails
 
-- Read-only until the human picks; the only mutating command this skill may ever run is `gh pr edit <n> --add-reviewer <login>` after explicit approval.
-- Never invent or guess GitHub logins; unmapped identities stay labeled `login unknown`.
+- Read-only until the human picks; the only mutating actions this skill may ever take are `gh pr edit <n> --add-reviewer <login>` and the Phase 7 post to `#eng-discussion`, each after its own explicit approval.
+- Never invent or guess GitHub logins or Slack identities; unmapped identities stay labeled `login unknown` (table) or plain text (Slack draft).
+- The Slack message goes to `#eng-discussion` only — never DMs, never other channels, never a second post if the first gets no reaction.
 - Bot approvals don't satisfy human-review requirements — never recommend a bot.
 - Every recommendation ships with receipts; a candidate you can't justify in one evidence line doesn't make the list.

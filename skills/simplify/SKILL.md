@@ -3,7 +3,8 @@ name: simplify
 description: >-
   Post-implementation refinement pass: remove slop from recently changed code,
   tests, and docs — dead code, needless abstraction, duplication, comment
-  noise, and stale references left by mid-development pivots. Behavior-
+  noise, excess coupling/state/logic complexity, and stale references left by
+  mid-development pivots. Behavior-
   preserving edits are applied directly; API/semantic changes are only
   reported. Invoked automatically by the personal stop hook after large
   changes, or manually as /simplify. Arguments: a file list (hook path),
@@ -49,13 +50,26 @@ Work through the diff hunks against these checklists. Fix what is safe; note the
 
 - **Dead weight**: unreachable branches, unused imports/variables/parameters, code kept "in case" with no caller.
 - **Needless structure**: else-after-return, single-use flags, nesting that flattens with early returns, branching that collapses to an expression.
-- **Duplication introduced by this change**: near-identical blocks within the diff — extract or unify (only when the extraction is private to the touched files; otherwise report).
+- **Duplication introduced by this change**: near-identical blocks within the diff — extract or unify (only when the extraction is private to the touched files; otherwise report). Dedupe only when it does **not** add state, coupling, or an abstraction more complex than the repetition it removes — otherwise keep the duplication. "Less code" alone never justifies an edit.
 - **Reinvention**: before keeping a new helper, grep for an existing util that already does it (mono principle: *extend, don't duplicate*). Swap to the existing one when the call is a drop-in.
 - **Speculative generality**: options, parameters, generics, or abstraction layers with exactly one caller and no concrete second use. Inline private ones; report exported ones.
 - **Defensive redundancy**: checks that cannot fail given the types, try/catch that swallows and rethrows or wraps nothing meaningful, duplicate validation of already-validated input.
 - **Leftover debug**: `console.log`/`print`/dbg output, commented-out code, TODO markers for work that was actually done.
 - **Type slop**: `any`, `as` assertions that a narrower declaration would avoid, redundant type annotations the compiler infers.
-- **Comment slop**: comments that narrate the next line, restate the code, describe the change's history, or address a reviewer. Keep only comments stating constraints the code can't show.
+- **Comment slop**: comments that narrate the next line, restate the code, describe the change's history, or address a reviewer. Keep only comments stating constraints the code can't show. Change-provenance notes ("was X", "renamed from Y", "added to fix Z") always go — commits and diffs already record that history, and coding agents can mine it from there on demand.
+- **Comment length cap (new comments)**: every comment **introduced in this diff** that survives the slop check must be meaningful and fit in **at most 2 lines**. Trim to the load-bearing constraint; if it genuinely needs more, move the explanation to the spec/doc/commit message and leave a ≤2-line pointer or nothing.
+
+### Functional simplicity (code)
+
+Checked on every changed unit, in **priority order: state > coupling > logic complexity > duplication**. When two simplifications conflict, the higher priority wins (e.g. accept complexity if it eliminates state); when unsure how to resolve a tradeoff, choose the option with less state. Lean on functional-programming principles — pure functions, immutability, explicit data-in/data-out, composition — so the shipped code costs the reader the least mental effort.
+
+- **Coupling**: a changed unit should depend on the narrowest surface that serves it. Narrow parameters that take a whole object but read one or two fields; replace reach-through chains (`a.b.c.d`) by passing the needed value; make hidden inputs (module-level state, ambient config reads inside a function) explicit parameters. Private-scope narrowing is applyable; exported signatures are report-only.
+- **State**: prefer stateless. `let` that could be `const` + expression; accumulator loops that collapse to `map`/`filter`/`reduce`; boolean/state flags replaced by values derived at the point of use; mutation of shared or module state — separate the pure computation from the effect and push the effect to the edge. In-place mutation of a parameter or shared structure is a semantics risk: apply only when confined to the touched file's private scope, otherwise report. A cache, singleton, memoization layer, or mutable module-level variable **introduced by this diff** is state that outlives a call — report it unless the value is derivable at the point of use (then derive it).
+- **Purity**: a computation function that reads the clock (`Date.now()`, `new Date()`) or randomness deep inside its logic isn't referentially transparent and resists testing (env/config reads are the coupling bullet above). Inject the value as a parameter when the function is private; report when exported.
+- **Command–query separation**: a new function that both returns a computed value and performs a side effect (writes, mutates a param, logs-as-signal) — split into pure query + effectful command. Private splits are applyable; exported ones report-only.
+- **Mutating stdlib traps**: `sort()`/`reverse()`/`splice()` on an array that isn't a fresh local copy, or returning a mutated input. Switch to `toSorted()`/`toReversed()`/spread-copy when it's a drop-in.
+- **Redundancy**: beyond the duplication/reinvention bullets above — the same expression computed more than once, values re-derived that an earlier binding already holds, parallel data structures kept in sync by hand when one derives from the other.
+- **Logic complexity**: beyond the needless-structure bullet above — compound boolean conditions → named predicates; branch ladders → an expression or lookup map; interleaved concerns → compose small single-purpose functions. Prefer the declarative form when it reads with less effort — if a clever one-liner costs more to parse than the branch it replaced, keep the branch.
 
 ### Tests
 

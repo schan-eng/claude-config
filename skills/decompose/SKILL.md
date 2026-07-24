@@ -1,16 +1,15 @@
 ---
 name: decompose
 description: >-
-  Decompose the current branch into small, fully independent modular PRs that
-  each branch off and target a shared integration branch — mutually
-  dependency-free buildups first in reading order, then one final wiring PR
-  that ties the modules together to achieve the branch's objective — so a
-  reviewer can read the work as an incremental story and approve each piece
-  almost trivially, and buildups can merge in any order. Plan-first: always
-  analyze and display a decomposition plan, and REQUIRE explicit human
-  approval before creating any branch, commit, or PR. Invoke explicitly via
-  `/decompose` (not auto-invoked) to decompose / split a branch into smaller
-  reviewable PRs.
+  Decompose the current branch into a small number of digestible, modular PRs
+  that each branch off and target a shared integration branch — independent
+  buildups in reading order, then one wiring PR that ties them together — with
+  the umbrella integration PR as the single hub for all set-level context.
+  Prefer parallel spokes over stacked dependencies, and prefer fewer PRs over
+  more: never over-decompose. Plan-first: always display a decomposition plan and
+  REQUIRE explicit human approval before creating any branch, commit, or PR.
+  Invoke explicitly via `/decompose` (not auto-invoked) to decompose / split a
+  branch into smaller reviewable PRs.
 allowed-tools: Read, Grep, Glob, Bash, Skill
 argument-hint: "[base-ref (default: origin/main)]"
 user-invocable: true
@@ -18,180 +17,232 @@ disable-model-invocation: true
 compatibility: Requires git and an authenticated GitHub CLI (gh) to open the decomposed PRs, and a repo with a runnable test suite (plus optional lint/build) so each compartment can be verified green. Invokes the /simplify and /self-review skills.
 ---
 
-# Decompose — split a fat branch into small modular PRs
+# Decompose — split a fat branch into a few modular PRs
 
-Big PRs hide intent and let slop slip through. This skill decomposes one large branch's objective into **minor objectives, each isolated in its own fully independent modular PR**, plus **one final wiring PR that ties the modules together to achieve the main objective**. A human reads the set like a story: each PR introduces one intention, is small enough to comprehend at a glance, and passes all tests on its own. Each small PR branches off and **targets a shared integration branch directly** (tracked by a checklist) — buildups have no dependencies on each other, so they can be reviewed and merged in any order, and **main is untouched until the whole feature is assembled and merged in one final PR**. The reviewer learns the feature incrementally and can confirm that *exactly* what's needed (and nothing more) enters the codebase.
+Big PRs hide intent and let slop slip through. This skill splits one branch's objective into a **small set of digestible modular PRs** plus **one wiring PR** that ties them together, so a reviewer reads the work as a story: one intention per PR, graspable at a glance, green on its own.
+
+**The shape — parallel spokes and one hub.** Every PR branches off the **integration branch** and targets it directly. Buildups depend only on the base, so they merge in any order and can be reviewed simultaneously. The wiring PR alone references the others and alone flips behavior; it merges last. Main is untouched until the assembled integration branch merges in one final PR — and because each buildup is inert, integration is main-mergeable at every point.
+
+**Two failure modes, equally bad.** One fat PR nobody can review — and a swarm of tiny PRs that costs more to track than it saves to read. Aim between: as few PRs as the distinct intentions require, each independently reviewable.
 
 ## Prerequisites
 
-`git`; an authenticated GitHub CLI (`gh auth status` succeeds) to open the decomposed PRs; and a repo with a runnable test suite (and ideally lint/build) so each compartment can be proven green. If `gh` isn't authenticated or no test command exists, say so up front — the plan can still be produced, but flag that PR creation / per-PR verification can't complete.
+`git`; `gh auth status` succeeding; a runnable test suite (ideally lint/build too) so each compartment can be proven green. If either is missing, say so up front — the plan can still be produced, but flag that PR creation / per-PR verification can't complete.
 
 ## PRIME DIRECTIVE — plan first, never auto-execute
 
-This skill has two halves separated by a HARD GATE:
+Two halves separated by a HARD GATE: **Analyze + Plan** (read-only), then **Execute** (branches/commits/PRs) — ONLY after the human explicitly approves the displayed plan. **Nothing mutates before the gate**: no branches, commits, PRs, pushes, and no cleanup passes (`/simplify` runs after decomposition, per compartment, in Phase 4). Present the plan and stop — in plan mode via `ExitPlanMode`, otherwise ask directly. Silence or an ambiguous reply = not approved.
 
-1. **Analyze + Plan** (read-mostly): understand the branch, design the split, and present a written plan.
-2. **Execute** (creates branches/commits/PRs): ONLY after the human explicitly approves the displayed plan.
+## The integration PR is the hub
 
-You MUST NOT create branches, commits, or PRs — or push anything — until the human has seen the plan and said to proceed. Present the plan and stop. If running in plan mode, surface it via `ExitPlanMode`; otherwise ask the human directly to approve before continuing. Treat silence or an ambiguous reply as "not approved."
+All **set-level** context lives in exactly one place: the umbrella `integration → main` PR, mirrored by the committed `CHECKLIST.md`. Individual PR bodies stay brief and point back to it (`Context: <umbrella link>`), so there's one thing to update when the plan changes and no reviewer has to reconstruct the arc from N descriptions. The hub carries:
 
-The one mutation allowed before the gate is Phase 0's `/simplify` (cleanup only, reversible via git) because the split must be planned against already-clean code. Call this out when you run it.
+- the thesis, and the numbered reading order with each PR's live status;
+- the merge rules — buildups any order, wiring last, plus any declared dependency edge;
+- a **symbol map**: `Name` — defined v\<i>, consumed v\<j> — so nobody greps across PRs to orient;
+- **reviewer assignment per PR** (this is what makes parallel review actually happen — a DB owner and a service owner can review at the same time);
+- cut-candidate decisions, the cleanup ledger, and the amendment log;
+- **deploy ordering** for the final merge: migrations vs code, flag state at deploy, what to watch after.
 
----
+When a PR is re-scoped, added, or dropped, update the hub first, then the affected PR bodies — including the symbol map whenever anything renames.
+
+**Approving the hub PR means:** every checkbox ticked, CI green on integration, the reconstruction check passed, deploy ordering confirmed, cut candidates resolved. It does **not** mean re-reading the reassembled diff line-by-line — each compartment was already reviewed on its own, and re-reviewing the whole thing discards the split. State this in the hub body so the final approver knows exactly what they're signing.
 
 ## What you are optimizing: reviewer comprehension
 
-The single metric is the **time and mental effort a reviewer spends to become confident** in a change. Everything below serves that. A PR is comprehensible when a reviewer can — in one sitting, with no outside context — answer five questions: *what is this, why now, what changed, what did NOT change, and how do I know it's safe.* Design every compartment and every PR description to answer those five up front. Hold this bar for each PR:
+The metric is the **total** time and effort a reviewer spends becoming confident — summed across the set, not per PR. Splitting helps only while it lowers that sum. A PR is comprehensible when the reviewer can, in one sitting with no outside context, answer: *what is this, why now, what changed, what did NOT change, how do I know it's safe.* Hold this bar:
 
-- **One concept per PR.** A reviewer holds one idea at a time. Never mix a refactor with a behavior change, or two intentions, in a single PR.
-- **No surprises in the diff.** Mechanical noise — renames, file moves, formatting, generated files, lockfiles — drowns the lines that matter. Isolate it into its own "no-thinking-required" PR so the diffs that need thought are pure signal.
-- **Teach, don't just show.** The PR body points the reviewer's eye at the 1–3 lines that carry the meaning and states what's deliberately absent, so they aren't hunting for missing wiring.
-- **Introduce vocabulary before use.** A type/helper/concept lands in a buildup PR (earlier in reading order) and is consumed **only by the wiring PR** — so each diff reads with everything it references already understood. Buildup PRs never consume each other's code; every cross-compartment import lands in wiring.
-- **Stay within a cognitive budget, under a hard 5-PR cap.** Prefer a PR a reviewer grasps in ~5 minutes (≈ ≤200 net logic lines, one subsystem) — but never exceed **5 PRs total** for the set. When the budget and the cap collide, the cap wins: keep ≤5 coherent PRs and use the cover note + per-PR "Read this" pointers to make a larger one navigable. (Generated/mechanical lines don't count toward the per-PR budget.)
-- **Each PR earns its approval alone.** A reviewer should be able to read PR *k* and say "yes, this is correct and harmless" without first re-deriving PRs 1…k-1. The description carries whatever prior context is needed.
+- **One concept per PR — and a whole concept.** Never mix a refactor with a behavior change, or two intentions; equally, never split one intention to make diffs smaller.
+- **Name the judgment being asked.** State what approval means for this PR (`Approve if:`) and how hard to look (`Review mode:`). An inert buildup asks "is this abstraction right and is it truly unreachable?" — production correctness isn't on the table. Wiring asks "is this switch safe and undoable?" `Approve if` is a **floor, not a ceiling** — it states what must be true, never what may be skipped, and a bug found outside it is still a blocker.
+- **Prove claims, don't assert them.** `INERT` ships with the command and result that show it; "tested" ships with the test that fails if the central line is reverted. Both save every reviewer re-deriving them.
+- **Teach, don't just show.** Sequence the files to read, name the ones to skip, point at the 1–3 lines carrying the meaning, and state what's deliberately absent.
+- **Introduce vocabulary before use.** A type/helper lands in a buildup and is consumed **only by wiring**; cross-compartment imports live in the hub PR.
+- **Each PR earns approval alone**, without re-deriving PRs 1…k-1.
+- **Per-PR budget, secondary to the set.** Prefer ~5 minutes of reading (≈ ≤200 net logic lines, one subsystem; generated lines don't count). When that conflicts with keeping the set small, the set wins — ship the larger PR with a good reading guide.
 
----
+## Phase 0 — Survey the tree (read-only)
 
-## Phase 0 — Simplify the whole branch first (mandated)
-
-Before analyzing anything, run the `/simplify` skill over the entire branch diff (vs the merge-base with the default branch). Splitting dirty code just multiplies the cleanup across PRs. Apply simplify's safe fixes, note what it skipped, and decompose the *result*.
-
-If the working tree has unrelated uncommitted changes, tell the user and let them set them aside first — don't sweep them into the split.
+If the tree holds **unrelated uncommitted changes**, tell the user and let them set those aside — don't sweep them into the split. Note cleanup opportunities (dead code, debug leftovers, formatting churn) as **Cut candidates** for the plan rather than fixing them now. Don't run `/simplify`: it mutates, and cleaning before the seams are known reshapes the hunks you're about to plan around.
 
 ## Phase 1 — Analyze the branch
 
-Establish the exact change set, the same way a careful reviewer would:
-
-1. Resolve the base ref: use `$ARGUMENTS` if given (a branch/ref to diff against); otherwise default to the repo's real default branch — `git symbolic-ref --short refs/remotes/origin/HEAD` (fallback `origin/main`). Then `base=$(git merge-base <base-ref> HEAD)`. The decomposition source is the **cumulative diff from `base` to the current working state**, including uncommitted changes.
-2. List changed files with churn: `git diff --stat "$base"` across **ALL paths — never scope the diff to one subdirectory.** A branch's work often spans services (e.g. a backend endpoint + the CLI that calls it); narrowing to `-- some/dir/` silently drops cross-cutting changes and yields an incomplete, mis-ordered split. Read every non-trivial hunk — you cannot group what you haven't read.
-3. For each file/hunk, identify:
-   - **Intention** — what feature/fix/capability it serves (group by *why*, not by file type).
-   - **Kind** — new module, new function, edit to existing reachable code, config/flag, test, docs, dependency, migration, deletion.
-   - **Reachability** — is it executed by a production entrypoint today, or is it inert (nothing imports/calls it yet)? This drives ordering.
-   - **Dependencies** — what other hunks it needs to compile/run.
-4. Write a one-line "what is this branch actually trying to do" thesis. The set of PRs must tell that story.
-5. **Resolve the Linear ticket id** — it anchors every branch/PR/checklist name (see Naming). Extract it from the current branch name (match `[A-Za-z]+-[0-9]+`, e.g. `simon/eng-10751-…` → `ENG-10751`); if absent, scan recent commit subjects for a `[ENG-####]` tag (`git log -20 --format=%s`); if still none, ask the user for the ticket. If there's genuinely no ticket, fall back to a descriptive group slug and note that in the plan.
+1. **Resolve the base.** `$ARGUMENTS` if given, else the real default branch — `git symbolic-ref --short refs/remotes/origin/HEAD` (fallback `origin/main`). Then `base=$(git merge-base <base-ref> HEAD)`. The source is the **cumulative diff from `base` to the current working state, including uncommitted changes**.
+2. **List churn:** `git diff --stat "$base"` across **ALL paths — never scope to one subdirectory.** Branch work often spans services (a backend endpoint + the CLI calling it); narrowing to `-- some/dir/` silently drops cross-cutting changes and yields a mis-ordered split. Read every non-trivial hunk — you cannot group what you haven't read.
+3. **Per file/hunk, identify:** **intention** (what feature/fix it serves — group by *why*, not by file type); **kind** (new module, new function, edit to reachable code, config/flag, test, docs, dependency, migration, deletion); **reachability** (executed by a production entrypoint today, or inert — this drives ordering); **dependencies** (what it needs to compile/run — these decide what can be parallel).
+4. **Write a one-line thesis.** The PR set must tell that story.
+5. **Resolve the Linear ticket id** — it anchors every name. Match `[A-Za-z]+-[0-9]+` in the branch name (`simon/eng-10751-…` → `ENG-10751`); else scan `git log -20 --format=%s` for `[ENG-####]`; else ask. With genuinely no ticket, fall back to a descriptive group slug and note that in the plan.
 
 ## Phase 2 — Decompose by intention (the core)
 
-Group the hunks into compartments that each carry one coherent intention. **Hard cap: at most 5 PRs.** A large set is its own review burden — more than ~5 PRs to track, review, and merge outweighs the benefit of smaller diffs. So group by *intention* into ≤5 coherent units (the natural shape is often: backend/data → primitives → libraries → assembly → wiring). Within that cap, **decompose modularly**: every buildup compartment must stand alone — green against the base with **no dependency on any other compartment**. If buildup B needs code buildup A introduces, that's a re-seam signal: merge them into one compartment, or move the consuming line into wiring. The **only** compartment that may reference others is the wiring compartment, which ties the modules together to achieve the branch's objective. The shape is hub-and-spoke — independent modules plus one wiring hub — never a linear chain. Prefer smaller and minimize nesting/coupling — but the cap wins: when hitting it would force a 6th PR, merge the two most-related compartments instead and lean on the cover note + "Read this" pointers to keep the larger PR legible.
+Group hunks into compartments carrying one coherent intention each, then check the grouping against three constraints in order: **right-sized set**, **parallel by default**, **inert until wiring**.
 
-### The ordering principle: additive buildup, wiring last
+**Test for one intention, applied while grouping:** you can state A's *why now* in one line without mentioning B. If you can't, A and B are one intention — group them together.
 
-Order compartments so **production behavior does not change until the final PR**. This is branch-by-abstraction / dark-launch applied to review:
+### Right-sizing: prefer fewer PRs
 
-- **Buildup PRs (1 … n-1)** add code that is **inert in production** — present, unit-tested in isolation, but not reachable from any live entrypoint. A change is production-inert when it is:
-  - a new file/module nothing imports yet,
-  - a new function/class/type no reachable path calls yet,
-  - a new flag/config that defaults to *current* behavior (off),
-  - tests, docs, or fixtures,
-  - an added-but-unused dependency,
-  - an additive, backward-compatible migration (new nullable column / new table that no running code reads yet).
-- **Wiring PR (n, usually last)** is the small diff that makes it live: register the route/handler, import-and-call the new module from the existing entrypoint, flip the flag default, swap the old path for the new, delete the dead old code. This is the **only** PR that flips behavior, kept small enough to scrutinize line-by-line. It is also the **only PR with dependencies**: it merges into the integration branch last, after every buildup PR has landed, and is the sole place cross-compartment code may meet.
+**The count follows distinct intentions — never files, modules, or layers.** Target **2–4 PRs including wiring**; **5 is a hard ceiling, not a goal.** Two is a fine answer, and a single-intention branch should get a recommendation NOT to split rather than invented seams. Ask how few PRs could tell this story, then split only where a reviewer would genuinely stall.
 
-### Where the PRs land: an integration branch, not main
+**Over-decomposed if any of these holds — merge the offenders:** a PR's "why now" repeats its neighbor's; it adds under ~30 net logic lines and isn't pure mechanical noise; a reviewer would always open two together to understand either; a compartment exists to satisfy structure rather than isolate an intention; the same background is re-explained in three bodies; or splitting produced a dependency you then had to work around.
 
-The small PRs do **not** merge into main. Every small PR **branches off the integration branch and targets it directly** — no PR is ever based on another PR's branch. The integration branch is the assembly area, tracked by a checklist. Buildup PRs merge in any order; the wiring PR merges last, once every buildup has landed. Main is untouched until the whole feature is assembled and the integration branch is merged in **one** final PR.
+When merging to respect the ceiling, combine the **two most-related** compartments; a slightly-over-budget PR with a good reading guide beats a sixth PR.
 
-**Invariant: the integration branch is main-mergeable at every point.** Because each buildup is inert and dependency-free, any subset of merged buildup PRs leaves integration a behavior no-op vs main — merging integration into main early would break nothing. Only after the wiring PR lands does integration deliver the objective, and even then the lone production event is the `integration → main` merge, after every checklist box is ticked and the integration branch is green. The inert→wiring ordering still governs the *reading order* of the small PRs so the reviewer learns the feature incrementally.
+### Parallel by default
 
-Each compartment must satisfy:
-- **Self-contained & green** — compiles and passes the full test suite on its own against the base (a buildup references only itself; only the wiring compartment references the buildups).
-- **Independent** — a buildup depends on nothing but the base, never on another compartment. Can't satisfy that? Re-seam: merge the coupled compartments or push the coupling into wiring.
-- **Inert until wiring** — if a buildup PR would change production behavior, it's mis-grouped; move the behavior-changing line to the wiring PR.
-- **Minimal** — as few lines and as little nesting as the intention allows.
-- **Covered** — ships the tests for the code it introduces (see "Tests travel with their code"); never defers them to a later PR.
+Every buildup should stand alone — green against the base, **no dependency on any other compartment** — so all can be opened, reviewed, and merged in any order. If buildup B needs code from A, work these escapes **in order**: (1) **merge A and B** (usually right, and it shrinks the set); (2) **move the consuming line into wiring**, leaving both independent; (3) **make A self-sufficient** so B doesn't need it yet (B ships its own narrow helper, or A's type is exercised only by its own tests).
 
-*Illustrative example* — a branch that adds rate-limiting to an API endpoint splits into 3 PRs (`api rate limit v1/3 … v3/3`), all targeting the integration branch:
-- `api rate limit v1/3: add RateLimiter` — the class + its unit tests; nothing imports it. **INERT**, independent.
-- `api rate limit v2/3: add config` — the setting + parsing, defaulting to *unlimited* (today's behavior) + unit tests for parsing. **INERT** (the default preserves production), independent — v1 and v2 can merge in either order.
-- `api rate limit v3/3: enforce in request handler` — imports `RateLimiter`, applies it on the live path (~15 lines) + an integration test asserting the Nth request gets 429. **LIVE — the only PR that flips behavior** (and only reaches production when the integration branch merges to main). The wiring PR: the only one that references v1 and v2, merged after both.
+### When a dependency is genuinely needed
 
-The reviewer reads v1 ("here's the mechanism"), v2 ("here's the knob, off by default"), v3 ("here's where it switches on") and scrutinizes prod risk only in v3.
+Sometimes no escape works: a migration a new query layer needs to compile, an intra-file split touching the same lines, a type whose only meaningful test needs its consumer. Stacking is then permitted under **all** of:
+- **at most one dependency edge** in the set, and **never a chain deeper than two** — a child of a child means re-seam;
+- the child branches off and targets **the parent's branch** (`--base <parent-branch>`); GitHub re-targets it to integration when the parent merges;
+- plan and PR body both declare `Depends on: v<j>/<n> (merges first)`, and the hub records the merge-order constraint;
+- the plan states **which escape failed and why** — an undefended stack is a re-seam signal;
+- the body notes that the child's GitHub diff includes the parent until the parent lands.
 
-### Tests travel with their code — every PR carries its own
+### Inert until wiring
 
-No PR defers its tests to a later one ("tests coming next" is forbidden — each PR is green *and* covered on its own). Match the test level to what the PR introduces:
-- **Buildup PR** ships the **unit tests** for the unit it adds — the new function/class/module is exercised in isolation in the same PR. A buildup PR that adds code with no accompanying unit test is incomplete: write the test or re-group.
-- **Wiring PR** ships the **integration / end-to-end tests** for the now-connected behavior (plus any contract / migration / smoke tests the live path needs) — these can only be written once the pieces are wired, so they belong here.
-- A **refactor/rename PR** carries the **updated** existing tests in the same PR, kept green.
+Order compartments so **production behavior does not change until the final PR** — branch-by-abstraction applied to review.
 
-State the level(s) present in each plan entry and confirm the PR's own change is actually *exercised* — a green suite with zero coverage of the new lines does not count.
+**Buildups (1 … n-1)** add code that is **inert in production**: present, unit-tested in isolation, unreachable from any live entrypoint. A change is production-inert when it is a new file/module nothing imports yet; a new function/class/type no reachable path calls yet; a new flag/config defaulting to *current* behavior (off); tests, docs, or fixtures; an added-but-unused dependency; or an additive, backward-compatible migration (new nullable column / new table nothing reads yet).
+
+**Wiring (n, last)** is the small diff that makes it live: register the route/handler, import-and-call the new module from the existing entrypoint, flip the flag default, swap the old path out, delete dead code. The only PR that flips behavior, kept small enough to read line-by-line; merged after every buildup lands; the place cross-compartment code meets. This inert→wiring order is also the **reading order**, so the reviewer learns the feature incrementally.
+
+Each compartment must be: **self-contained & green** (full suite passes on its own against its base); **independent** (base only, unless it's wiring or the one declared stack child); **inert until wiring** (a buildup that changes production behavior is mis-grouped — move that line to wiring); **whole** (a complete intention, not a fragment); **covered** (ships tests for what it introduces, never deferred).
+
+### Worked examples — the parallel default and the one exception
+
+**Vertical slice (3 PRs, fully parallel)** — new endpoint plus the CLI that calls it:
+- **v1/3 handler** + unit tests, route unregistered. INERT (proof: `rg 'archiveRoute'` → definition only). Review mode: design. Reviewer: service owner.
+- **v2/3 client method** + unit tests, nothing calls it. INERT, independent — reviewed *simultaneously* with v1, merges in either order. Reviewer: CLI owner.
+- **v3/3 wiring** — register the route, call the method, e2e test. LIVE; undo = clean revert. Review mode: line-by-line.
+- The shared request/response type is the classic forced dependency: put it in wiring, or let each side hold a narrow local type until wiring unifies them.
+
+**Additive migration (3 PRs, one declared stack)** — schema plus a new read path:
+- **v1/3 migration** — new nullable column, nothing reads it. INERT.
+- **v2/3 repository layer** + tests, **stacked on v1** (`Depends on: v1/3`) — it cannot compile without the column, and all three escapes fail: merging buries a migration inside app code, there's no consuming line to move to wiring, and the query can't be tested without the table.
+- **v3/3 wiring** — switch reads over, backfill, delete the old path. LIVE. Hub records the deploy ordering: migration runs before the code ships.
+
+### More patterns
+
+- **Flag-gated feature** — v1 flag defaulting to today's behavior · v2 module, unimported · v3 wiring flips the default. Keep the flag *read* in wiring so v1 and v2 stay independent.
+- **Refactor to make room** — v1 provable no-op (verify-no-op mode, existing tests updated) · v2 inert capability · v3 wiring. Never interleave a refactor and a feature in the same file; the refactor ships first and the feature rebases.
+- **Consolidating N ad-hoc copies** — v1 abstraction + tests, inert · v2 wiring swaps all N call sites and deletes the old copies. Converting N sites is ONE intention.
+- **Dependency bump** — v1 manifest/lockfile alone (mechanical, skip-the-diff) · v2 adapt the call sites. If the bump alone is red, they're one PR — never ship red to preserve a seam.
+- **Live bugfix inside a feature branch** — pull it out as v1: minimal, LIVE, cherry-pickable, undo stated. Never let a fix hide inside the wiring PR, where its risk blends into the feature's.
+- **Hot-path optimization** — v1 benchmark + instrumentation (inert, and it doubles as the falsification device) · v2 the optimization, LIVE. `Approve if:` = the benchmark is honest.
+- **Decommission** — the one inversion of inert-then-wiring: v1 stop calling it (LIVE, small, revertible) · v2 delete the now-unreachable code (inert).
+- **Multi-service monorepo change** — shared contract first (inert), one independent spoke per service, then wiring flips traffic. Past two services the ceiling bites: merge spokes, and assign a reviewer per service in the hub.
+
+**Never split these — each is one intention:** one PR per layer (model / service / controller); a unit apart from its tests; a config knob into schema + parser + default; a rename by file; an interface from its only implementation; a "types PR" that exists only to unblock two others (you engineered the dependency); a UI feature into component / hook / page / fetch — that's 2 PRs, not 4.
+
+### Tests travel with their code
+
+No PR defers its tests ("tests coming next" is forbidden — each PR is green *and* covered). **Buildup** ships **unit tests** for the unit it adds; a buildup with no accompanying test is incomplete. **Wiring** ships **integration / e2e** tests for the now-connected behavior, plus any contract / migration / smoke tests the live path needs. **Refactor/rename** carries the **updated** existing tests, green. State the levels in each plan entry, and give the **falsification**: which test fails if the central line is reverted. A green suite with zero coverage of the new lines doesn't count.
 
 ### When "no impact until last" can't fully hold
 
-Be honest. A pure bugfix, a security patch, or a change to a hot path is inherently live. Don't fake inertness. Instead: isolate each such change into its own minimal PR, place it as early as safe, and **flag it explicitly** in the plan as "has production impact" with the blast radius. The goal is that *most* of the set is inert and the live pieces are tiny and conspicuous.
+Be honest — a bugfix, security patch, or hot-path change is inherently live; don't fake inertness. Isolate each in its own minimal PR, place it as early as safe, and flag it as "has production impact" with blast radius and undo path. Removals invert the order outright (stop calling it, *then* delete the dead code), which is fine — say so in the cover note. Goal: *most* of the set is inert, and the live pieces are tiny and conspicuous.
 
 ### Boundary heuristics
-- Prefer **whole-file** compartment boundaries — they're robust to build and to review. Split a single file across PRs only when its hunks serve genuinely different intentions, and note that intra-file splits are harder to keep green.
-- Keep refactors separate from behavior changes. A rename/move PR should be a pure no-op a reviewer can approve without thinking; a behavior PR should contain no incidental renames.
-- **Quarantine the noise.** Pure-mechanical churn (formatting, renames, moves, regenerated lockfiles/snapshots) goes in its own early "no-thinking-required" PR, so it never inflates a PR that needs real attention.
+
+- Prefer **whole-file** boundaries. Split a file across PRs only when its hunks serve genuinely different intentions; intra-file splits are harder to keep green and are the commonest source of a forced dependency.
+- Keep refactors separate from behavior changes: a rename/move PR is a no-op approvable without thinking; a behavior PR carries no incidental renames.
+- **Quarantine the noise** — formatting, moves, regenerated lockfiles/snapshots get their own early PR, but only if there's enough to distort another PR. Mark generated paths `linguist-generated=true` in `.gitattributes` so GitHub collapses them.
 - One new dependency = its own (or a clearly-labeled) PR; reviewers scrutinize new deps.
 
 ### Flag slop — don't just relocate it
 
-Splitting must not launder unnecessary code into a tidy-looking set of PRs. As you map hunks to intentions, anything that does NOT trace to the branch's thesis is a **cut candidate**: dead/unreachable code, speculative gold-plating, debug/commented-out leftovers, unrelated drive-by edits, abstractions with a single caller. Do not silently spread these across PRs. List them in the plan under **"Cut candidates"** with a one-line reason each, and let the human decide to drop them. A good decomposition usually makes the branch *smaller*, not just rearranged — surfacing what shouldn't ship is half the value of reviewing incrementally.
+Splitting must not launder unnecessary code into a tidy-looking set. Anything not tracing to the thesis is a **cut candidate**: dead/unreachable code, speculative gold-plating, debug leftovers, unrelated drive-by edits, abstractions with a single caller. List them in the plan with a one-line reason each and let the human decide. A good decomposition usually makes the branch *smaller*, not just rearranged.
 
 ## Phase 3 — Present the plan, then STOP (HARD GATE)
 
-The plan's audience is a busy human reviewer, not a machine. Lead with a **reading guide** — the cover note they read first — then a terse per-PR entry for each beat.
+Lead with the **cover note** (which becomes the hub PR body), then one terse entry per beat.
 
-**Reading guide (the cover note):**
-- the branch thesis in one sentence,
-- the integration branch name + the checklist (in `docs/artifacts/<YYYY-MM>/<ticket-slug>/`, optionally also a hosted Artifact), and that every small PR merges into the integration branch (not main),
-- the set as a numbered table of contents (reading order), each line = that PR's story beat, so the arc is visible before any diff is opened,
-- the merge-order rule: buildup PRs are mutually independent and merge in any order; the wiring PR merges last,
-- where behavior flips (which PR) and that main itself only changes at the final `integration → main` merge,
-- totals: PR count, LOC, and the inert-vs-live split,
-- any **Cut candidates** from Phase 2 (slop to drop before splitting).
+**Cover note:** the thesis in one sentence; the integration branch name + checklist path (`docs/artifacts/<YYYY-MM>/<ticket-slug>/`) and that every PR merges into integration, not main; the numbered table of contents in reading order, each line one story beat; the merge rules plus any dependency edge and the escape that failed; the **symbol map**; **suggested reviewer per PR**; **why this count** — one line on where you merged rather than split; which PR flips behavior; **deploy ordering** for the final merge; totals (PR count, LOC, inert-vs-live); any **cut candidates**.
 
-**Naming — anchor everything on the Linear ticket (Phase 1, step 5).** Use the ticket id (e.g. `ENG-10751`) as the shared identifier across the whole group so the integration branch, every small PR, and the checklist are unmistakably one group and trace straight back to the ticket. Pick a short, descriptive **group label** too (from the thesis) for human readability in titles, plus each PR's position **out of the total count**:
-- **Integration branch:** `<ticket-lower>-integration` — e.g. `eng-10751-integration`. The assembly area every small PR merges into.
-- **Small PR branch:** `<ticket-lower>-v<k>-of-<n>-<beat-slug>` — e.g. `eng-10751-v1-of-5-archive-endpoint` (n ≤ 5).
-- **PR title:** `[<TICKET>] <group label> v<k>/<n>: <brief beat>` — e.g. `[ENG-10751] kindo cli validate v1/5: archiveConversation endpoint`. The `[<TICKET>]` prefix matches the repo's commit/PR convention; the group label + `/<n>` make the group and its size visible from any one PR.
-- **Checklist:** a committed markdown tracker that lives in the repo's **feature-artifacts directory**, NOT the repo root — in this monorepo that's `docs/artifacts/<YYYY-MM>/<ticket-slug>/CHECKLIST.md` (e.g. `docs/artifacts/2026-06/eng-10751-kindo-validate/CHECKLIST.md`). It's a tracked feature artifact that ships to main with the rest (the same convention as the specs/proposals/qa-evidence already there), and it anchors the umbrella PR. Optionally also render it as a hosted **Artifact** for sharing, and mirror an interactive `- [ ]` task list into the umbrella PR body for live ticking.
+**Naming — anchor on the ticket** so branch, PRs, and checklist are unmistakably one group. Pick a short **group label** from the thesis:
+- **Integration branch:** `<ticket-lower>-integration` (e.g. `eng-10751-integration`).
+- **PR branch:** `<ticket-lower>-v<k>-of-<n>-<beat-slug>` (e.g. `eng-10751-v1-of-3-archive-endpoint`, n ≤ 5).
+- **PR title:** `[<TICKET>] <group label> v<k>/<n>: <brief beat>` — e.g. `[ENG-10751] kindo cli validate v1/3: archiveConversation endpoint`. The prefix matches repo convention; label + `/<n>` show the group and its size from any one PR.
+- **Checklist:** committed markdown in the **feature-artifacts directory, NOT the repo root** — `docs/artifacts/<YYYY-MM>/<ticket-slug>/CHECKLIST.md` (e.g. `docs/artifacts/2026-06/eng-10751-kindo-validate/CHECKLIST.md`), a tracked artifact shipping to main like the specs/qa-evidence already there. Mirror it into the hub PR body as `- [ ]` items for live ticking; optionally also render a hosted Artifact.
 - **Final PR:** `integration → main`, titled `[<TICKET>] <group label>: integrate <n> PRs`.
 
-`v<k>` is the **reading order** — merge order is free for buildups; only wiring-last constrains it — and the highest `v<n>` is the wiring PR. If no ticket was resolved, fall back to a descriptive `<group-slug>` in place of `<ticket-lower>` and drop the `[<TICKET>]` prefix — and say so in the plan. Show the proposed title **and** branch for every PR in the plan so the human approves the names and the count too. (If the count changes during planning, renumber so every name's `/<n>` agrees.)
+`v<k>` is **reading order**; merge order is free for buildups, constrained only by wiring-last and any declared edge. With no ticket, substitute `<group-slug>` for `<ticket-lower>`, drop the prefix, and say so. Show every proposed title **and** branch so the human approves names and count; renumber if the count changes.
 
-**Per PR, in order** (keep every line to a short phrase — this doubles as the shipped PR body, which must stay brief):
+**Per PR, in order** — short phrases; this doubles as the shipped body:
 
 ```
-v<k>/<n> — title: "[<TICKET>] <group label> v<k>/<n>: <brief beat>"   branch: <ticket-lower>-v<k>-of-<n>-<beat-slug>
-  Base:       <ticket-lower>-integration   (every PR — buildups and wiring alike)
-  Role:       buildup (independent, merges in any order) | wiring (ties together v1…v<n-1>; merges last)
-  Why now:    <the intention this beat serves — one line>
-  Read this:  <the 1–3 files/lines that carry the meaning>
-  Does NOT:   <what's deliberately absent — so nothing reads as missing wiring>
-  Production: INERT | LIVE — <blast radius if live>
-  Tests:      <levels present — unit / integration / e2e — and what they assert>
-  ~Review:    <minutes> · ~<LOC> lines · <#files>
+v<k>/<n>  "[<TICKET>] <label> v<k>/<n>: <beat>"   branch: <ticket-lower>-v<k>-of-<n>-<slug>
+  Context:       <umbrella PR link> — read the hub first; the arc takes 60 seconds
+  Base:          <ticket-lower>-integration   (a declared stack child bases on its parent)
+  Role:          buildup (any order) | wiring (last; ties v1…v<n-1>)
+  Depends on:    none | v<j>/<n> — merges first; <escape that failed>
+  Why now:       <this beat's intention — distinct from every other PR's>
+  Review mode:   verify-no-op | design | line-by-line
+  Approve if:    <the single judgment asked — e.g. "the interface is right", not "the code is correct">
+  Read in order: <the files/lines carrying the meaning>    Skip: <generated/snapshot/lockfile paths>
+  Does NOT:      <deliberately absent — so nothing reads as missing wiring>
+  Production:    INERT — proof: `<cmd>` → <result>   |   LIVE — <blast radius>; undo: <flag flip | clean revert>
+  Falsification: revert <line> → <test> fails
+  Instead of:    <rejected alternative + one-line why>   (only where a new abstraction lands)
+  Tests:         <unit | integration | e2e> — <what they assert>
+  Size:          ~<net logic LOC> · <#files> · <subsystem>
 ```
 
-Then a one-paragraph **narrative**: read v1→v<n>, what story unfolds, where behavior flips inside the integration branch, and that main changes only at the final `integration → main` merge once every box is ticked. The reviewer should finish the narrative already understanding the feature, so each diff merely *confirms* what they were told.
+**Filled, so the vague fields have a target** (v1/3 of the vertical slice above):
 
-End with the explicit gate: state that execution will create the integration branch + checklist, then N small PRs targeting it (running `/simplify` + `/self-review` + tests on each), plus the draft `integration → main` PR; list any cut candidates awaiting a decision; and **ask for approval**. Do not proceed without it. Invite the human to re-group (merge/split/reorder), drop cut candidates, or adjust the narrative before approving — comprehension is subjective, so let them tune the seams.
+```
+v1/3  "[ENG-10751] archive conversations v1/3: archiveConversation handler"   branch: eng-10751-v1-of-3-archive-handler
+  Context:       #482 — read the hub first; the arc takes 60 seconds
+  Base:          eng-10751-integration      Role: buildup (any order)      Depends on: none
+  Why now:       the server needs somewhere to put an archive before anything can call it
+  Review mode:   design
+  Approve if:    the handler's contract is right — status codes, idempotency on re-archive
+  Read in order: handlers/archive.ts (whole file, 60 lines) · handlers/archive.test.ts    Skip: none
+  Does NOT:      register the route, touch the router, or expose this to any client
+  Production:    INERT — proof: `rg archiveConversation --type ts` → handler + its test only
+  Falsification: revert the `already_archived` early-return → test "re-archive is a no-op" fails
+  Instead of:    a status field on updateConversation — a separate handler keeps the permission check narrow
+  Tests:         unit — happy path, re-archive idempotency, 404 on missing id
+  Size:          ~60 net logic lines · 2 files · api
+```
+
+Then a one-paragraph **narrative**: read v1→v<n>, what story unfolds, where behavior flips inside integration, and that main changes only at the final merge once every box is ticked. The reviewer should finish it already understanding the feature, so each diff merely *confirms* it.
+
+End with the gate: execution will create the integration branch + checklist + draft hub PR, then N PRs targeting it (`/simplify` + `/self-review` + tests on each **after** carving); list cut candidates awaiting decision; **ask for approval**. Invite the human to re-group — **merging compartments as readily as splitting them** — reorder, drop cuts, or adjust the narrative. Do not proceed without approval.
 
 ## Phase 4 — Execute (ONLY after explicit approval)
 
-The small PRs assemble onto an **integration branch**; main is touched once, at the end. When every small PR has merged into the integration branch, it equals the **intended** final state (the original branch, minus any approved cut candidates), and a single `integration → main` PR ships it.
+When every PR has merged into integration, it equals the **intended** final state (original branch, minus approved cuts, plus post-split cleanup), and one `integration → main` PR ships it.
 
-1. **Capture the target.** Snapshot the full working tree (incl. uncommitted changes) as a commit: `target=$(git stash create)` — `git rev-parse HEAD` is WRONG when the tree is dirty. Then `git stash push -u` (the `-u` matters — it removes untracked files too, so they can't be swept into a compartment later). If the human approved dropping cut candidates, build the intended target on a scratch branch (everything except the cuts) and use *that* as `target`. Restore the user's tree (`git stash pop`) when done.
-   - **Never `git add -A` / `git add .`** when building a compartment — that sweeps in any stray untracked file. Stage ONLY the compartment's paths: `git checkout "$target" -- <paths>` already stages exactly those; `git rm <path>` stages a deletion; `git add <explicit-path>` for anything else (e.g. the checklist). Then `git commit`.
-2. **Create the integration branch + checklist** (names from the ticket — Phase 1, step 5). `git checkout -b <ticket-lower>-integration "$base"`. Add the tracking markdown in the repo's feature-artifacts dir — `docs/artifacts/<YYYY-MM>/<ticket-slug>/CHECKLIST.md` (NOT the repo root) — with: the thesis, the reading order and the merge rule (buildups in any order, wiring last), and a checkbox line per PR — `- [ ] v<k>/<n> — <beat> — INERT|LIVE — buildup|wiring — <PR link>` — ending with `- [ ] integration → main`. Commit (explicit path, never `git add -A`), push, and open the **draft** `integration → main` PR titled `[<TICKET>] <group label>: integrate <n> PRs`, mirroring the checklist into its body so the umbrella PR shows the whole arc. Optionally also render the checklist as a hosted Artifact and link it from the PR.
-3. **Build each compartment `k` = 1 … n** (names: branch `<ticket-lower>-v<k>-of-<n>-<beat-slug>`, title `[<TICKET>] <group label> v<k>/<n>: <brief beat>`):
-   - Branch off the **integration branch** — every compartment is built directly on `<ticket-lower>-integration` and contains only its own changes. The wiring compartment additionally merges each buildup branch in before adding its own changes; its PR still bases on integration (note in the body that its diff includes the buildups until they land) and merges last.
-   - Apply **only** compartment `k`'s changes: whole-file → `git checkout "$target" -- <files>`; intra-file splits → `git apply --3way` a patch for just those hunks.
-   - Run `/simplify` on this compartment's diff; apply safe fixes.
-   - Confirm the compartment ships its own tests (unit for buildup; integration/e2e for wiring), then run the full test suite (and lint/build). It MUST be green AND the new/changed lines exercised. If red, the compartment isn't self-contained — fix the grouping; if uncovered, add the test before opening the PR.
-   - Run `/self-review` (skill) on this compartment's diff; resolve real findings.
-   - Commit, then `gh pr create --base <ticket-lower>-integration --title "[<TICKET>] <group label> v<k>/<n>: <brief beat>"`. **Every PR targets the integration branch directly** — buildups merge in any order, wiring last. Keep the **PR body brief** — a few short lines from the plan entry (one-line *why*, the "Read this" pointer, "Does NOT yet" if inert, `Production: INERT|LIVE`). No essays; the cover note + checklist hold the full arc.
-4. **Reconstruction check (mandatory):** the wiring branch — every buildup branch merged in, plus the wiring changes — must satisfy `git diff <wiring branch> "$target"` empty **except** for the checklist file. (No wiring compartment? Merge all branches onto a throwaway assembly branch off integration and diff that instead.) A merge conflict while assembling means two compartments overlap; anything else differing means a hunk was dropped or duplicated — reconcile before handing off.
-5. **Hand off — do NOT merge.** Merging each small PR into the integration branch, ticking the checklist, and finally merging `integration → main` are **human** actions (this skill never merges). Report: the integration branch, the checklist file/PR, every small-PR URL in reading order (buildups merge in any order, wiring last), which PR flips behavior, and the final `integration → main` PR. Note that main stays unchanged until that last merge, and remind the human to tick the checklist as each lands.
+1. **Capture the target.** `target=$(git stash create)` — `git rev-parse HEAD` is WRONG when the tree is dirty. Then `git stash push -u` (the `-u` removes untracked files so they can't be swept into a compartment later). If cuts were approved, build the intended target on a scratch branch and use that. Restore the tree (`git stash pop`) when done. **Never `git add -A` / `git add .`** — stage only the compartment's paths (`git checkout "$target" -- <paths>` stages exactly those; `git rm <path>` a deletion; `git add <explicit-path>` for anything else). Open the **cleanup ledger**: a running list of every change `/simplify` or `/self-review` makes after the split — it's what keeps step 4 meaningful.
+2. **Create the integration branch + hub.** `git checkout -b <ticket-lower>-integration "$base"`. Write `CHECKLIST.md` at the feature-artifacts path with the thesis, reading order, merge rules (buildups any order, wiring last, any declared edge), deploy ordering, and a checkbox per PR — `- [ ] v<k>/<n> — <beat> — INERT|LIVE — buildup|wiring — <reviewer> — <PR link>` — ending `- [ ] integration → main`. Commit (explicit path), push, and open the **draft** `integration → main` PR titled `[<TICKET>] <group label>: integrate <n> PRs`, with the full cover note as its body. This PR is the hub every other PR links to. If drafts don't run CI or accept approvals in this repo, open it ready-for-review with a WIP label instead — CI green on integration is part of the final gate.
+3. **Build each compartment `k` = 1 … n:**
+   - Branch off **integration** (or, for the one declared stack child, its parent). Each contains only its own changes. Wiring additionally merges each buildup branch in locally before adding its changes; its PR still bases on integration and merges last.
+   - Apply **only** compartment `k`: whole-file → `git checkout "$target" -- <files>`; intra-file → `git apply --3way` a patch for just those hunks.
+   - **Now simplify** — run `/simplify` on this compartment's diff and apply safe fixes, so cleanup happens in the context of the compartment's own intention. Record every change in the ledger.
+   - Confirm it ships its own tests, then run the full suite (and lint/build). It MUST be green AND its new lines exercised — verify the falsification claim by actually reverting the line once. Red = not self-contained (fix the grouping); uncovered = add the test first.
+   - Run `/self-review` on the diff; resolve real findings and log them.
+   - **Read your own body as a stranger** before opening: all five questions answerable from it alone, or rewrite it. Filler in `Why now`, `Approve if`, or `Falsification` is the usual failure.
+   - Commit as **one well-messaged commit per compartment** so reviewers can read commit-by-commit, then `gh pr create --base <ticket-lower>-integration --title "[<TICKET>] <group label> v<k>/<n>: <brief beat>"` (a stack child uses `--base <parent-branch>`). Body = that PR's plan entry, nothing more, with the hub link on its first line; the hub holds the arc. Require CI green on the PR itself, not just locally. **Open wiring as a draft** and mark it ready only once its buildups have landed and its diff is pure — until then it shows the buildups too, so give reviewers `git diff <last-buildup-branch> <wiring-branch>` for the wiring delta alone.
+   - Add the PR link and reviewer to the hub.
+4. **Reconstruction check (mandatory).** Assemble the wiring branch (all buildups merged in, plus wiring changes) and run `git diff <wiring branch> "$target"`. Every remaining difference must be the checklist file or a ledger entry; anything else means a hunk was dropped or duplicated. (No wiring compartment? Merge all branches onto a throwaway assembly branch off integration and diff that.) A merge conflict while assembling means two compartments overlap — reconcile, and note the overlap as evidence the seam was wrong.
+5. **Hand off — do NOT merge.** Merging PRs into integration, ticking boxes, and merging `integration → main` are **human** actions. Report the hub PR first, then the integration branch, every PR URL in reading order with its reviewer, which PR flips behavior, the cleanup ledger, and the deploy ordering for the final merge. Main stays unchanged until that last merge.
+
+### When a reviewer requests changes
+
+Independence makes amendments cheap — use it. Amend the affected **buildup branch only**; nothing else moves, and re-run its suite. If the wiring branch already merged that buildup locally, **re-merge the updated branch into wiring and re-run the reconstruction check** — never hand-patch wiring to match. If a requested change doesn't fit the compartment's "why now", move it to the compartment that owns it rather than absorbing it. Log every post-approval re-scope in the hub's amendment log, renumber `/<n>` if the count changed, and reflect anything that alters intended content (not just cleanup) in the ledger — otherwise step 4 stops catching drift.
+
+**If a reviewer rejects the seam** — "why are v1 and v2 separate?", or "this buildup isn't actually inert" — treat it as a re-plan, not a patch. Fold the compartments (or move the offending line to wiring), close the emptied PR with a comment pointing at its replacement, **renumber every remaining title and branch so `/<n>` agrees**, update the hub's reading order and checklist first, then the surviving bodies. A rejected buildup that can't be salvaged becomes a cut candidate: drop it, renumber, and note it in the hub rather than leaving a dead PR open.
+
+### Keeping the set moving
+
+If main advances while integration sits, merge main into integration, re-run the suite, and re-run the reconstruction check — otherwise the "main-mergeable at every point" invariant decays and reviewers eat conflicts that aren't theirs. Parallel review only pays off if the spokes are reviewed concurrently: if two buildups sit unreviewed for more than a couple of days, the set is failing its purpose — escalate in the hub rather than waiting.
 
 ## Guardrails
-- Never push or open any PR before the Phase 3 approval.
-- Small PRs target the **integration branch directly**, never main and never each other. Buildup compartments must not depend on one another — the wiring branch is the only place compartments meet (it merges the buildup branches locally, and its PR still targets integration). Only the final `integration → main` PR touches main, and only humans merge it.
-- Each PR green on its own — no "fixed in a later PR."
-- Don't let `/simplify` or `/self-review` silently change a compartment's scope; the merged compartments must reconstruct to `target` (modulo the checklist file).
-- If the branch is already small and single-intention, say so and recommend NOT splitting rather than inventing seams.
+
+- Never push, open a PR, or run `/simplify` before the Phase 3 approval.
+- PRs target the **integration branch directly** — never main, never each other, except the single declared stack child. Only the final `integration → main` PR touches main, and only humans merge it.
+- **Fewer PRs beats more.** 2–4 target, 5 ceiling; merging two compartments is always an acceptable fix, and an already-single-intention branch gets a recommendation NOT to split. Never split one intention to hit a line budget.
+- **Set-level context lives in the hub, once** — update it before the PR bodies, always.
+- `/simplify` and `/self-review` may clean a compartment but must not change its **scope**: every deviation from `target` is the checklist or a logged ledger entry.

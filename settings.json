@@ -20,6 +20,10 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/simplify-track-edits.sh 2>/dev/null || true"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/intent-track-edits.sh 2>/dev/null || true"
           }
         ]
       },
@@ -73,6 +77,12 @@
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/intent-check-on-stop.sh",
+            "timeout": 15,
+            "statusMessage": "Checking intent drift..."
+          },
           {
             "type": "command",
             "command": "~/.claude/hooks/simplify-on-stop.sh",

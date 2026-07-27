@@ -129,11 +129,11 @@ Runs only when the user chose "yes" to the ping in the Phase 6 selector, and onl
 3. **Compose the message** — exactly this body shape:
 
    ```
-   Hey @<name>[ and @<name2>], can you review this PR/these PRs. <1 sentence of context: what the change does and why it matters, sourced from the PR title/body and the Linear ticket.>
-   - <PR title> — <PR url>
+   Hey @<name>[ and @<name2>], can you review this PR/these PRs — it adds <brief what it does, one clause>.[ You already approved <the specific underlying PR> that merged into this.]
+   <PR url>
    ```
 
-   One bullet per selected PR (single PR → keep the one bullet; its link must still appear). "this PR" vs "these PRs" follows the selection count. Keep the context to one sentence — it's a nudge, not a changelog.
+   Bare PR URL(s), one per line — no `[TICKET]`/title prefix and no Linear tags anywhere. Context is one short clause of *what* the change does, not why (it's a nudge, not a changelog). One line per selected PR (single PR → the one link still appears). "this PR" vs "these PRs" follows the selection count. If a chosen reviewer already reviewed or approved an underlying/sibling PR that fed into this one, add one clause saying so — verify it against that PR's reviews and name only the PR(s) they actually reviewed (don't say "the PRs" when it was one).
 4. **Gate, then post.** AskUserQuestion: "Post this to #eng-discussion?" with options "Post it" / "Don't post", **with the complete message body in the "Post it" option's `preview` field** — prose printed between tool calls may never render for the user, so the preview is the only reliable display surface, and a gate answered without the exact body visible doesn't count as approval. The built-in Other lets the user dictate wording changes; re-draft and re-gate after any edit. Only "Post it" posts. Declined or unanswered → don't post, don't retry, don't fall back to DMs.
 
 ## Edge cases

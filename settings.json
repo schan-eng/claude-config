@@ -1,6 +1,18 @@
 {
   "model": "claude-fable-5[1m]",
   "hooks": {
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["/Users/schan/.claude/hooks/log_skill.py", "direct"],
+            "async": true
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
@@ -8,6 +20,52 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/simplify-track-edits.sh 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["/Users/schan/.claude/hooks/log_skill.py", "model"],
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "payload=$(cat); fp=$(jq -r '.tool_input.file_path // \"\"' <<<\"$payload\"); case \"$fp\" in */skills/*) printf %s \"$payload\" | python3 /Users/schan/.claude/hooks/log_skill.py reference ;; esac",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["/Users/schan/.claude/hooks/log_skill.py", "model-failed"],
+            "async": true
+          }
+        ]
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["/Users/schan/.claude/hooks/log_skill.py", "instructions"],
+            "async": true
           }
         ]
       }
@@ -20,6 +78,35 @@
             "command": "~/.claude/hooks/simplify-on-stop.sh",
             "timeout": 15,
             "statusMessage": "Checking for simplify pass..."
+          },
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["/Users/schan/.claude/hooks/render_report.py"],
+            "statusMessage": "Updating skill report"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3",
+            "args": ["/Users/schan/.claude/hooks/render_report.py"]
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "payload=$(cat); cmd=$(jq -r '.tool_input.command // \"\"' <<<\"$payload\"); case \"$cmd\" in 'gh pr create'*|'gh pr edit'*) printf %s \"$payload\" | python3 /Users/schan/.claude/hooks/guard_pr_body.py ;; esac",
+            "timeout": 15
           }
         ]
       }

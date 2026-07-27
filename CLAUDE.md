@@ -39,3 +39,7 @@
 
 - Plan mode and plan files: stay detailed — completeness beats brevity there.
 - Skills with their own output contract (/remind-me digest, /simplify report, review reports) follow their contract, not this cap.
+
+## Pull requests
+
+- PR bodies must include the generated skill report from `.claude/artifacts/skill-report-<session>.md` — read it and append its contents to the body before `gh pr create`/`gh pr edit`.
